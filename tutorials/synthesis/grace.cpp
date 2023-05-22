@@ -579,6 +579,9 @@ public:
         if (ParameterGUI::usingKeyboard()) {  // Ignore keys if GUI is using them
         return true;
         }
+        if (k.key() == '0') { // 1st octave
+            pickCell(randomBpm, 0.0, 0);
+        }
         if (k.key() == '1') { // 1st octave
             pickCell(randomBpm, 0.0, 1);
         }
@@ -688,37 +691,31 @@ public:
         int randomVoice = randomInt(0, 3);
 
         for(int i = 0; i < melody.size(); i++) {
+            float dur = eighthNoteDur;
+            float amp = 0.1;
+            if (i == melody.size() - 1) {
+                dur = measureDur;
+            }
+            if (melody[i] > 200.00) {
+                amp = 0.05;
+            }
+            if (melody[i] > 400.00) {
+                amp = 0.03;
+            }
             switch (randomVoice)
             {
             case 0:
-                playSquare(melody[i] * pow(2, octave), i * eighthNoteDur, eighthNoteDur, 0.1, 0.0, 0.2);
+                playSquare(melody[i] * pow(2, octave), i * eighthNoteDur, dur, amp, 0.0, 0.2);
                 break;
             case 1:
-                playOsc(melody[i] * pow(2, octave), i * eighthNoteDur, eighthNoteDur, 0.1, 0.0, 0.2);
+                playOsc(melody[i] * pow(2, octave), i * eighthNoteDur, dur, amp, 0.0, 0.2);
                 break;
             case 2:
-                playSine(melody[i] * pow(2, octave), i * eighthNoteDur, eighthNoteDur, 0.1, 0.0, 0.2);
+                playSine(melody[i] * pow(2, octave), i * eighthNoteDur, dur, amp, 0.0, 0.2);
                 break;
             case 3:
-                playWireBox(melody[i] * pow(2, octave), i * eighthNoteDur, eighthNoteDur, 0.1, 0.0, 0.2);
+                playWireBox(melody[i] * pow(2, octave), i * eighthNoteDur, dur, amp, 0.0, 0.2);
                 break;
-            }
-            if (i == melody.size() - 1) { // last note must be sustained
-                switch (randomVoice) 
-                {
-                    case 0:
-                    playSquare(melody[i] * pow(2, octave), i * eighthNoteDur, measureDur, 0.1, 0.0, 0.2);
-                    break;
-                    case 1:
-                    playOsc(melody[i] * pow(2, octave), i * eighthNoteDur, measureDur, 0.1, 0.0, 0.2);
-                    break;
-                    case 2:
-                    playSine(melody[i] * pow(2, octave), i * eighthNoteDur, measureDur, 0.1, 0.0, 0.2);
-                    break;
-                    case 3:
-                    playWireBox(melody[i] * pow(2, octave), i * eighthNoteDur, measureDur, 0.1, 0.0, 0.2);
-                    break;
-                }
             }
         }
     }
