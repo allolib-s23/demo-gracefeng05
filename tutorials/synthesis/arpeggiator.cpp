@@ -498,8 +498,8 @@ public:
         int presetNumber = asciiToIndex(k.key());
         synthManager.recallPreset(presetNumber);
         }
-        if (k.key() == 'i') {
-          playComp();
+        if (k.key() == 'a') {
+          // playArps();
         }
         /* else {
         // Otherwise trigger note for polyphonic synth
@@ -556,91 +556,44 @@ public:
     synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
     }
 
-  void arpeggiator(int bpm, float startTime, int measures, const std::vector<float>& frequencies, int octaves) {
-    // calculate duration of single note based on the number of frequencies.
-    float noteDuration;
-    switch (frequencies.size()) {
-      case 1: noteDuration = 60.0 / bpm * 2.0; break; // 
-      case 2: noteDuration = 60.0 / bpm; break; // 1/8 note
-      case 3: noteDuration = 60.0 / bpm * (2.0 / 3.0); break; // 1/4 note triplet
-      case 4: noteDuration = 60.0 / bpm * 0.5; break; // 1/8 note
-      case 6: noteDuration = 60.0/ bpm * (1.0 / 3.0);
+    void upDownArp(int bpm, float startTime, int measures, const std::vector<float>& frequencies, int octaves) {
+    float noteDuration = 0.5; // default to half notes.
+    switch (frequencies.size())
+    {
+        case 1: noteDuration = 2.0; break; // 1/2
+        case 2: noteDuration = 1.0; break; // 1/4
+        case 3: noteDuration = 2.0 / 3.0; break; // 1/4 triplet
+        case 4: noteDuration = 0.5; break; // 1/8
     }
 
+    // total number of notes in arpeggio.
     int numNotes = measures * 4 / noteDuration;
+
+    // total duration of arpeggio.
     float totalDuration = numNotes * noteDuration * 60.0 / bpm;
 
     // arpeggiate up and down specified number of octaves.
     int numSteps = frequencies.size() * octaves * 2; // double steps for ascending and descending.
-    for (int i = 0; i < numNotes; i++) {
-      // calculate index of current step in arpeggio.
-      int stepIndex = i % numSteps;
+    for (int i = 0; i < numNotes; i++)
+    {
+        // index of the current step in the arpeggio.
+        int stepIndex = i % numSteps;
 
-      // calculate frequency of current note.
-      float curFreq;
-      if (stepIndex < numSteps / 2) { // ascending
-                curFreq = frequencies[stepIndex % frequencies.size()] * pow(2.0, stepIndex / frequencies.size());
-      }
-      else { // descending
-        int descendingIndex = numSteps - stepIndex - 1;
-        curFreq = frequencies[descendingIndex % frequencies.size()] * pow(2.0, descendingIndex / frequencies.size());
-      }
-
-      playSquare(curFreq, startTime + i * totalDuration / numNotes, noteDuration, 0.05, 0.0, 0.001);
+        // frequency of the current note.
+        float frequency;
+        if (stepIndex < numSteps / 2) // ascending
+        {
+            frequency = frequencies[stepIndex % frequencies.size()] * pow(2.0, stepIndex / frequencies.size());
+        }
+        else // descending
+        {
+            int descendingIndex = numSteps - stepIndex - 1;
+            frequency = frequencies[descendingIndex % frequencies.size()] * pow(2.0, descendingIndex / frequencies.size());
+        }
+        playSquare(frequency, startTime + i * totalDuration / numNotes, noteDuration);
     }
-  }
-
-  void arpSquare(int bpm, float startTime, int measures, vector<float> notes, float amp) {
-    float noteDuration = ((60.0/bpm) * 3)/notes.size(); // total length of 1 measure divided by number of notes
-    int totalNotes = notes.size() * measures;
-    int curNote = 0;
-
-    for (int i = 0; i < measures; i++) {
-      for (int j = 0; j < notes.size(); j++) {
-        playSquare(notes[j], startTime + (curNote * noteDuration), noteDuration - 0.05, amp, 0.0, 0.05);
-        curNote++;
-      }
     }
-  }
 
-  void arpWireBox(int bpm, float startTime, int measures, vector<float> notes, float amp) {
-    float noteDuration = ((60.0/bpm) * 3)/notes.size(); // total length of 1 measure divided by number of notes
-    int totalNotes = notes.size() * measures;
-    int curNote = 0;
-
-    for (int i = 0; i < measures; i++) {
-      for (int j = 0; j < notes.size(); j++) {
-        playWireBox(notes[j], startTime + (curNote * noteDuration), noteDuration - 0.05, amp, 0.0, 0.05);
-        curNote++;
-      }
-    }
-  }
-
-  void arpSine(int bpm, float startTime, int measures, vector<float> notes, float amp) {
-    float noteDuration = ((60.0/bpm) * 3)/notes.size(); // total length of 1 measure divided by number of notes
-    int totalNotes = notes.size() * measures;
-    int curNote = 0;
-
-    for (int i = 0; i < measures; i++) {
-      for (int j = 0; j < notes.size(); j++) {
-        playSine(notes[j], startTime + (curNote * noteDuration), noteDuration - 0.05, amp, 0.0, 0.05);
-        curNote++;
-      }
-    }
-  }
-
-  void arpOsc(int bpm, float startTime, int measures, vector<float> notes, float amp) {
-    float noteDuration = ((60.0/bpm) * 3)/notes.size(); // total length of 1 measure divided by number of notes
-    int totalNotes = notes.size() * measures;
-    int curNote = 0;
-
-    for (int i = 0; i < measures; i++) {
-      for (int j = 0; j < notes.size(); j++) {
-        playOsc(notes[j], startTime + (curNote * noteDuration), noteDuration - 0.05, amp, 0.0, 0.05);
-        curNote++;
-      }
-    }
-  }
 
   void chord(int bpm, float startTime, int measures, vector<float> notes, float amp) {
     float chordDuration = ((60.0/bpm) * 3) * measures;
@@ -650,171 +603,11 @@ public:
     }
   }
 
-    void mainTheme(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-
-      vector<float> AEA = {880.00/2, 1318.51/2, 880.00/2};
-      vector<float> BEB = {987.77/2, 1318.51/2, 987.77/2};
-      vector<float> CEC = {1046.50/2, 1318.51/2, 1046.50/2};
-      vector<float> DED = {1174.66/2, 1318.51/2, 1174.66/2};
-      vector<float> DEB = {1174.66/2, 1318.51/2, 987.77/2};
-
-      for (int i = 0; i < reps; i++) {
-        arpSquare(bpm, startTime + addedTime, 2, AEA, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 6), 2, BEB, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 12), 2, CEC, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 18), 1, DED, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 21), 1, DEB, 0.1);
-
-        arpSine(bpm, startTime + addedTime, 2, AEA, 0.1);
-        arpSine(bpm, startTime + addedTime + timeElapsed(bpm, 6), 2, BEB, 0.1);
-        arpSine(bpm, startTime + addedTime + timeElapsed(bpm, 12), 2, CEC, 0.1);
-        arpSine(bpm, startTime + addedTime + timeElapsed(bpm, 18), 1, DED, 0.1);
-        arpSine(bpm, startTime + addedTime + timeElapsed(bpm, 21), 1, DEB, 0.1);
-        
-        addedTime += timeElapsed(bpm, 24);
-      }
-    }
-
-    void layer1(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-
-      vector<float> CBABCEABCECB = {261.63, 246.94, 220.00, 246.94, 261.63, 329.63, 440.00, 493.88, 523.25, 659.25, 523.25, 493.88};
-      vector<float> BAGABEBGBAGA = {493.88, 440.00, 392.00, 440.00, 493.88, 659.25, 493.88, 392.00, 493.88, 440.00, 392.00, 440.00};
-      vector<float> BAGABEBAGFED = {493.88, 440.00, 392.00, 440.00, 493.88, 659.25, 493.88, 440.00, 392.00, 349.23, 329.63, 293.66};
-      vector<float> CBABCEABCECBup = {261.63, 246.94, 220.00, 246.94, 261.63, 329.63, 440.00, 493.88, 523.25, 659.25, 523.25*2, 493.88*2};
-      vector<float> CBAGAGFEFEDC = {1046.50, 987.77, 880.00, 783.99, 880.00, 783.99, 698.46, 659.25, 698.46, 659.25, 587.33, 523.25};
-      vector<float> DEBCDEDEBCDE = {587.33, 659.25, 493.88, 523.25, 587.33, 659.25, 587.33, 659.25, 493.88, 523.25, 587.33, 659.25};
-
-      for (int i = 0; i < reps; i++) {
-        arpOsc(bpm, startTime + addedTime, 2, CBABCEABCECB, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 6), 1, BAGABEBGBAGA, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 9), 1, BAGABEBAGFED, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 12), 1, CBABCEABCECBup, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 15), 1, CBAGAGFEFEDC, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 18), 2, DEBCDEDEBCDE, 0.1);
-
-        addedTime += timeElapsed(bpm, 24);
-      }
-    }
-
-    void ostinato1(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-
-      vector<float> BC = {987.77, 1046.50, 987.77, 1046.50, 987.77, 1046.50, 987.77, 1046.50, 987.77, 1046.50, 987.77, 1046.50};
-
-      for (int i = 0; i < reps; i++) {
-        // arpSquare(bpm, startTime + addedTime, 1, BC, 0.1);
-        arpWireBox(bpm, startTime + addedTime, 1, BC, 0.1);
-
-        addedTime += timeElapsed(bpm, 3);
-      }
-    }
-    
-    void layer2(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-      
-      vector<float> ACEA = {440.00, 523.25, 659.25, 880.00, 440.00, 523.25, 659.25, 880.00, 440.00, 523.25, 659.25, 880.00};
-      vector<float> BDEB = {493.88, 587.33, 659.25, 987.77, 493.88, 587.33, 659.25, 987.77, 493.88, 587.33, 659.25, 987.77};
-      vector<float> ACEAGBEGACEA = {440.00, 523.25, 659.25, 880.00, 392.00, 493.88, 659.25, 783.99, 440.00, 523.25, 659.25, 880.00};
-      vector<float> BDEBACEAGBEG = {493.88, 587.33, 659.25, 987.77, 440.00, 523.25, 659.25, 880.00, 392.00, 493.88, 659.25, 783.99};
-
-      for (int i = 0; i < reps; i++) {
-        arpSquare(bpm, startTime + addedTime, 1, ACEA, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 3), 2, BDEB, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 9), 1, ACEAGBEGACEA, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 12), 1, BDEBACEAGBEG, 0.1);
-
-        addedTime += timeElapsed(bpm, 15);
-      }
-    }
-
-    void layer3(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-      
-      vector<float> FCEAE = {87.31, 130.81, 164.81, 220.00, 329.63, 220.00, 164.81, 130.81, 87.31, 130.81, 164.81, 220.00};
-      vector<float> GDEBE = {98.00, 146.83, 164.81, 246.94, 329.63, 246.94, 164.81, 146.83, 98.00, 146.83, 164.81, 246.94};
-      vector<float> ACECE = {110.00, 130.81, 164.81, 261.63, 329.63, 261.63, 164.81, 130.81, 110.00, 130.81, 164.81, 261.63};
-
-      for (int i = 0; i < reps; i++) {
-        arpSquare(bpm, startTime + addedTime, 2, FCEAE, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 6), 2, GDEBE, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 12), 2, ACECE, 0.1);
-        arpSquare(bpm, startTime + addedTime + timeElapsed(bpm, 18), 2, GDEBE, 0.1);
-
-        addedTime += timeElapsed(bpm, 24);
-      }
-    }
-
-    void layer4(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-      
-      vector<float> EAECF = {329.63*4, 220.00*4, 164.81*4, 130.81*4, 87.31*4, 130.81*4, 164.81*4, 220.00*4, 329.63*4, 220.00*4, 164.81*4, 130.81*4};
-      vector<float> EBEDG = {329.63*4, 246.94*4, 164.81*4, 146.83*4, 98.00*4, 146.83*4, 164.81*4, 246.94*4, 329.63*4, 246.94*4, 164.81*4, 146.83*4};
-      vector<float> ECECA = {329.63*4, 261.63*4, 164.81*4, 130.81*4, 110.00*4, 130.81*4, 164.81*4, 261.63*4, 329.63*4, 261.63*4, 164.81*4, 130.81*4};
-
-      for (int i = 0; i < reps; i++) {
-        arpOsc(bpm, startTime + addedTime, 2, EAECF, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 6), 2, EBEDG, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 12), 2, ECECA, 0.1);
-        arpOsc(bpm, startTime + addedTime + timeElapsed(bpm, 18), 2, EBEDG, 0.1);
-
-        addedTime += timeElapsed(bpm, 24);
-      }
-    }
-
-    void bass(int bpm, float startTime, int reps) {
-      float addedTime = 0.0;
-
-      vector<float> FF = {87.31, 87.31*2};
-      vector<float> GG = {98.00, 98.00*2};
-      vector<float> AA = {110.00, 110.00*2};
-
-      for (int i = 0; i < reps; i++) {
-        chord(bpm, startTime + addedTime, 2, FF, 0.2);
-        chord(bpm, startTime + addedTime + timeElapsed(bpm, 6), 2, GG, 0.2);
-        chord(bpm, startTime + addedTime + timeElapsed(bpm, 12), 2, AA, 0.2);
-        chord(bpm, startTime + addedTime + timeElapsed(bpm, 18), 2, GG, 0.2);
-        
-        addedTime += timeElapsed(bpm, 24);
-      }
-    }
-
-    void playComp() {
-      int bpm = 120;
-      vector<float> E = {329.63*2, 329.63*2, 329.63*2};
-      vector<float> downTriplets = {2637.02, 2349.32, 1975.53, 1567.98, 1318.51, 1174.66, 2637.02/2, 2349.32/2, 1975.53/2, 1567.98/2, 1318.51/2, 1174.66/2, 2637.02/4, 2349.32/4, 1975.53/4, 1567.98/4, 1318.51/4, 1174.66/4};
-      vector<float> upTriplets = {2637.02/8, 2349.32/8, 1975.53/8, 1567.98/8, 1318.51/8, 1174.66/8, 2637.02/4, 2349.32/4, 1975.53/4, 1567.98/4, 1318.51/4, 1174.66/4, 2637.02/2, 2349.32/2, 1975.53/2, 1567.98/2, 1318.51/2, 1174.66/2};
-      vector<float> glitter1 = {2349.32, 2093.00, 1975.53, 1567.98, 1396.91, 1318.51, 2349.32, 2093.00, 1975.53, 1567.98, 1396.91, 1318.51, 2349.32, 2093.00, 1975.53, 1567.98, 1396.91, 1318.51, 2349.32, 2093.00, 1975.53, 1567.98, 1396.91, 1318.51};
-      vector<float> glitter2 = {293.66, 329.63, 392.00, 493.88, 523.25, 587.33, 293.66*2, 329.63*2, 392.00*2, 493.88*2, 523.25*2, 587.33*2, 293.66*4, 329.63*4, 392.00*4, 493.88*4, 523.25*4, 587.33*4};
-
-      arpSquare(bpm, 0.0, 10, E, 0.1);
-      mainTheme(bpm, timeElapsed(bpm, 6), 2);
-      bass(bpm, timeElapsed(bpm, 6), 2);
-      layer1(bpm, timeElapsed(bpm, 30), 1);
-
-      // interlude
-      ostinato1(bpm, timeElapsed(bpm, 54), 5);
-      layer2(bpm, timeElapsed(bpm, 54), 1);
-
-      mainTheme(bpm, timeElapsed(bpm, 69), 2);
-      layer1(bpm, timeElapsed(bpm, 69), 2);
-      layer3(bpm, timeElapsed(bpm, 69), 2);
-      arpSquare(bpm, timeElapsed(bpm, 90), 1, downTriplets, 0.2);
-      arpOsc(bpm, timeElapsed(bpm, 105), 1, downTriplets, 0.2);
-      arpOsc(bpm, timeElapsed(bpm, 108), 1, upTriplets, 0.2);
-      arpWireBox(bpm, timeElapsed(bpm, 105), 1, downTriplets, 0.2);
-      arpWireBox(bpm, timeElapsed(bpm, 108), 1, upTriplets, 0.2);
-      arpWireBox(bpm, timeElapsed(bpm, 111), 1, glitter1, 0.2);
-      arpWireBox(bpm, timeElapsed(bpm, 114), 1, glitter2, 0.2);
-      arpOsc(bpm, timeElapsed(bpm, 111), 1, glitter1, 0.2);
-      arpSquare(bpm, timeElapsed(bpm, 114), 1, glitter2, 0.2);
-
-      layer4(bpm, timeElapsed(bpm, 93), 1);
-      bass(bpm, timeElapsed(bpm, 93), 1);
-
-      // interlude(bpm, timeElapsed(bpm, 48));
-    }
+  /* void playArps() {
+    vector<float> 
+    upDownArp(100, 0.0, 4, )
+  }
+  */
   
 };
 

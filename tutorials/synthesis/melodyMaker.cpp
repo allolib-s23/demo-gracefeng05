@@ -1,0 +1,1 @@
+// Sustain chord for 4 measures + generate random melody on top, change chord 
