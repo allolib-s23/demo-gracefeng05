@@ -633,7 +633,7 @@ public:
             int presetNumber = asciiToIndex(k.key());
             synthManager.recallPreset(presetNumber);
         }
-        if (k.key('q'))
+        if (k.key('o'))
         {
             playQuintet();
         }
