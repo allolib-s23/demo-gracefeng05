@@ -928,8 +928,50 @@ public:
     }
   }
 
-  void drums(float startTime, int measures){
+  void playChordAndArpeggio(int bpm, float startTime, int measures, vector<float> frequencies, int octaves)
+{
+  // calculate time per beat and total number of beats
+  float timePerBeat = 60.0 / bpm;
+  int numBeats = measures * 4;
+
+  // calculate note duration based on number of frequencies
+  float noteDuration;
+  switch (frequencies.size())
+  {
+    case 1:
+      noteDuration = 2.0; // half note
+      break;
+    case 2:
+      noteDuration = 1.0; // quarter note
+      break;
+    case 3:
+      noteDuration = 2.0 / 3.0; // quarter note triplet
+      break;
+    case 4:
+      noteDuration = 0.5; // eighth note
+      break;
+    default:
+      noteDuration = 0.5; // eighth note by default
+      break;
   }
+
+  // play chord
+  for (auto freq : frequencies)
+  {
+    playSine(freq, startTime, noteDuration);
+  }
+
+  // arpeggiate up one octave
+  for (int i = 0; i < octaves; i++)
+  {
+    for (int j = 0; j < frequencies.size(); j++)
+    {
+      float freq = frequencies[j] * pow(2.0, i + 1);
+      float time = startTime + j * noteDuration / frequencies.size() + i * noteDuration * frequencies.size();
+      playSine(freq, time, noteDuration / frequencies.size());
+    }
+  }
+}
 
   void playArps() {
     int bpm = 130;
@@ -953,7 +995,7 @@ public:
     chord(bpm, timeElapsed(bpm, 16), 2, FF, 0.1);
     chord(bpm, timeElapsed(bpm, 24), 2, Ab, 0.1);
 
-    drums(timeElapsed(bpm, 24), 8);
+    playChordAndArpeggio(bpm, timeElapsed(bpm, 32), 2, Fm9, 3);
   }
   
 };
