@@ -928,7 +928,7 @@ public:
     }
   }
 
-  void playChordAndArpeggio(int bpm, float startTime, int measures, vector<float> frequencies, int octaves)
+  void playChordAndArpeggio(int bpm, float startTime, int measures, vector<float>& frequencies, int octaves)
 {
   // calculate time per beat and total number of beats
   float timePerBeat = 60.0 / bpm;

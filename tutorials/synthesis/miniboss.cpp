@@ -154,7 +154,7 @@ class moonBass : public SynthVoice {
     mAmpEnv.levels(0, 1, 1, 0);
 
     // We have the mesh be a sphere
-    addDisc(mMesh, 1.0, 30);
+    addSphere(mMesh, 1.0);
 
     createInternalTriggerParameter("freq", 440, 10, 4000.0);
     createInternalTriggerParameter("amplitude", 0.161, 0.0, 1.0);
@@ -196,10 +196,10 @@ class moonBass : public SynthVoice {
   }
 
   void onProcess(Graphics& g) override {
+    double frequency = getInternalParameterValue("freq");
     g.pushMatrix();
-    g.translate(getInternalParameterValue("freq") / 300 - 2,
-                getInternalParameterValue("modAmt") / 25 - 1, -4);
-    float scaling = getInternalParameterValue("amplitude") * 1;
+    g.translate(sin(static_cast<double>(frequency)), cos(static_cast<double>(frequency)), -4);
+    float scaling = getInternalParameterValue("amplitude") * 0.7;
     g.scale(scaling, scaling, scaling * 1);
     g.color(HSV(getInternalParameterValue("modMul") / 20, 1,
                 mEnvFollow.value() * 10));
@@ -232,6 +232,136 @@ class moonBass : public SynthVoice {
     mAmpEnv.triggerRelease();
     mModEnv.triggerRelease();
   }
+};
+
+class longPluck : public SynthVoice {
+public:
+
+    // Unit generators
+    float mNoiseMix;
+    gam::Pan<> mPan;
+    gam::ADSR<> mAmpEnv;
+    gam::EnvFollow<> mEnvFollow;  // envelope follower to connect audio output to graphics
+    gam::DSF<> mOsc;
+    gam::NoiseWhite<> mNoise;
+    gam::Reson<> mRes;
+    gam::Env<2> mCFEnv;
+    gam::Env<2> mBWEnv;
+    // Additional members
+    Mesh mMesh;
+
+    // Initialize voice. This function will nly be called once per voice
+    void init() override {
+        mAmpEnv.curve(0); // linear segments
+        mAmpEnv.levels(0,1.0,1.0,0); // These tables are not normalized, so scale to 0.3
+        mAmpEnv.sustainPoint(2); // Make point 2 sustain until a release is issued
+        mCFEnv.curve(0);
+        mBWEnv.curve(0);
+        mOsc.harmonics(12);
+        // We have the mesh be a sphere
+        addDisc(mMesh, 1.0, 30);
+
+        createInternalTriggerParameter("amplitude", 0.385, 0.0, 1.0);
+        createInternalTriggerParameter("frequency", 60, 20, 5000);
+        createInternalTriggerParameter("attackTime", 0.01, 0.01, 3.0);
+        createInternalTriggerParameter("releaseTime", 0.1, 0.1, 10.0);
+        createInternalTriggerParameter("sustain", 0.752, 0.0, 1.0);
+        createInternalTriggerParameter("curve", -7.276, -10.0, 10.0);
+        createInternalTriggerParameter("noise", 0.056, 0.0, 1.0);
+        createInternalTriggerParameter("envDur", 0.013, 0.0, 5.0);
+        createInternalTriggerParameter("cf1", 3119.154, 10.0, 5000);
+        createInternalTriggerParameter("cf2", 662.539, 10.0, 5000);
+        createInternalTriggerParameter("cfRise", 1.447, 0.1, 2);
+        createInternalTriggerParameter("bw1", 624.154, 10.0, 5000);
+        createInternalTriggerParameter("bw2", 3503.000, 10.0, 5000);
+        createInternalTriggerParameter("bwRise", 0.465, 0.1, 2);
+        createInternalTriggerParameter("hmnum", 20.0, 5.0, 20.0);
+        createInternalTriggerParameter("hmamp", 1.00, 0.0, 1.0);
+        createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+
+    }
+
+    //
+    
+    virtual void onProcess(AudioIOData& io) override {
+        updateFromParameters();
+        float amp = getInternalParameterValue("amplitude");
+        float noiseMix = getInternalParameterValue("noise");
+        while(io()){
+            // mix oscillator with noise
+            float s1 = mOsc()*(1-noiseMix) + mNoise()*noiseMix;
+
+            // apply resonant filter
+            mRes.set(mCFEnv(), mBWEnv());
+            s1 = mRes(s1);
+
+            // appy amplitude envelope
+            s1 *= mAmpEnv() * amp;
+
+            float s2;
+            mPan(s1, s1,s2);
+            io.out(0) += s1;
+            io.out(1) += s2;
+        }
+        
+        
+        if(mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+    }
+
+   virtual void onProcess(Graphics &g) {
+          float frequency = getInternalParameterValue("frequency");
+          float amplitude = getInternalParameterValue("amplitude");
+          g.pushMatrix();
+          g.translate(amplitude,  amplitude, -4);
+          //g.scale(frequency/2000, frequency/4000, 1);
+          float scaling = 0.1;
+          g.scale(scaling * amplitude, scaling * amplitude, scaling * 1);
+          g.color(mEnvFollow.value(), frequency/1000, mEnvFollow.value()* 10, 0.4);
+          g.draw(mMesh);
+          g.popMatrix();
+   }
+    virtual void onTriggerOn() override {
+        updateFromParameters();
+        mAmpEnv.reset();
+        mCFEnv.reset();
+        mBWEnv.reset();
+        
+    }
+
+    virtual void onTriggerOff() override {
+        mAmpEnv.triggerRelease();
+//        mCFEnv.triggerRelease();
+//        mBWEnv.triggerRelease();
+    }
+
+    void updateFromParameters() {
+        mOsc.freq(getInternalParameterValue("frequency"));
+        mOsc.harmonics(getInternalParameterValue("hmnum"));
+        mOsc.ampRatio(getInternalParameterValue("hmamp"));
+        mAmpEnv.attack(getInternalParameterValue("attackTime"));
+    //    mAmpEnv.decay(getInternalParameterValue("attackTime"));
+        mAmpEnv.release(getInternalParameterValue("releaseTime"));
+        mAmpEnv.levels()[1]=getInternalParameterValue("sustain");
+        mAmpEnv.levels()[2]=getInternalParameterValue("sustain");
+
+        mAmpEnv.curve(getInternalParameterValue("curve"));
+        mPan.pos(getInternalParameterValue("pan"));
+        mCFEnv.levels(getInternalParameterValue("cf1"),
+                      getInternalParameterValue("cf2"),
+                      getInternalParameterValue("cf1"));
+
+
+        mCFEnv.lengths()[0] = getInternalParameterValue("cfRise");
+        mCFEnv.lengths()[1] = 1 - getInternalParameterValue("cfRise");
+        mBWEnv.levels(getInternalParameterValue("bw1"),
+                      getInternalParameterValue("bw2"),
+                      getInternalParameterValue("bw1"));
+        mBWEnv.lengths()[0] = getInternalParameterValue("bwRise");
+        mBWEnv.lengths()[1] = 1- getInternalParameterValue("bwRise");
+
+        mCFEnv.totalLength(getInternalParameterValue("envDur"));
+        mBWEnv.totalLength(getInternalParameterValue("envDur"));
+    }
 };
 
 // harp like 2
@@ -331,6 +461,399 @@ class piano : public SynthVoice {
     mAmpEnv.triggerRelease();
     mModEnv.triggerRelease();
   }
+};
+
+// SubSyn
+class funkyBass : public SynthVoice {
+public:
+
+    // Unit generators
+    float mNoiseMix;
+    gam::Pan<> mPan;
+    gam::ADSR<> mAmpEnv;
+    gam::EnvFollow<> mEnvFollow;  // envelope follower to connect audio output to graphics
+    gam::DSF<> mOsc;
+    gam::NoiseWhite<> mNoise;
+    gam::Reson<> mRes;
+    gam::Env<2> mCFEnv;
+    gam::Env<2> mBWEnv;
+    // Additional members
+    Mesh mMesh;
+
+    // Initialize voice. This function will nly be called once per voice
+    void init() override {
+        mAmpEnv.curve(0); // linear segments
+        mAmpEnv.levels(0,1.0,1.0,0); // These tables are not normalized, so scale to 0.3
+        mAmpEnv.sustainPoint(2); // Make point 2 sustain until a release is issued
+        mCFEnv.curve(0);
+        mBWEnv.curve(0);
+        mOsc.harmonics(12);
+        // We have the mesh be a sphere
+        addPrism(mMesh);
+
+        createInternalTriggerParameter("amplitude", 0.385, 0.0, 1.0);
+        createInternalTriggerParameter("frequency", 60, 20, 5000);
+        createInternalTriggerParameter("attackTime", 0.01, 0.01, 3.0);
+        createInternalTriggerParameter("releaseTime", 0.1, 0.1, 10.0);
+        createInternalTriggerParameter("sustain", 0.695, 0.0, 1.0);
+        createInternalTriggerParameter("curve", 2.721, -10.0, 10.0);
+        createInternalTriggerParameter("noise", 0.012, 0.0, 1.0);
+        createInternalTriggerParameter("envDur", 0.569, 0.0, 5.0);
+        createInternalTriggerParameter("cf1", 10.0, 10.0, 5000);
+        createInternalTriggerParameter("cf2", 4828.875, 10.0, 5000);
+        createInternalTriggerParameter("cfRise", 0.556, 0.1, 2);
+        createInternalTriggerParameter("bw1", 10.0, 10.0, 5000);
+        createInternalTriggerParameter("bw2", 13124.472, 10.0, 5000);
+        createInternalTriggerParameter("bwRise", 0.520, 0.1, 2);
+        createInternalTriggerParameter("hmnum", 16.564, 5.0, 20.0);
+        createInternalTriggerParameter("hmamp", 0.706, 0.0, 1.0);
+        createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+
+    }
+
+    //
+    
+    virtual void onProcess(AudioIOData& io) override {
+        updateFromParameters();
+        float amp = getInternalParameterValue("amplitude");
+        float noiseMix = getInternalParameterValue("noise");
+        while(io()){
+            // mix oscillator with noise
+            float s1 = mOsc()*(1-noiseMix) + mNoise()*noiseMix;
+
+            // apply resonant filter
+            mRes.set(mCFEnv(), mBWEnv());
+            s1 = mRes(s1);
+
+            // appy amplitude envelope
+            s1 *= mAmpEnv() * amp;
+
+            float s2;
+            mPan(s1, s1,s2);
+            io.out(0) += s1;
+            io.out(1) += s2;
+        }
+        
+        
+        if(mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+    }
+
+   virtual void onProcess(Graphics &g) {
+          float frequency = getInternalParameterValue("frequency");
+          float amplitude = getInternalParameterValue("amplitude");
+          g.pushMatrix();
+          g.translate(sin(static_cast<double>(frequency)), cos(static_cast<double>(frequency)), -6);
+          //g.scale(frequency/2000, frequency/4000, 1);
+          float scaling = 0.1;
+          g.scale(scaling * frequency/200, scaling * frequency/400, scaling* 1);
+          g.color(mEnvFollow.value(), frequency/1000, mEnvFollow.value()* 10, 0.4);
+          g.draw(mMesh);
+          g.popMatrix();
+   }
+    virtual void onTriggerOn() override {
+        updateFromParameters();
+        mAmpEnv.reset();
+        mCFEnv.reset();
+        mBWEnv.reset();
+        
+    }
+
+    virtual void onTriggerOff() override {
+        mAmpEnv.triggerRelease();
+//        mCFEnv.triggerRelease();
+//        mBWEnv.triggerRelease();
+    }
+
+    void updateFromParameters() {
+        mOsc.freq(getInternalParameterValue("frequency"));
+        mOsc.harmonics(getInternalParameterValue("hmnum"));
+        mOsc.ampRatio(getInternalParameterValue("hmamp"));
+        mAmpEnv.attack(getInternalParameterValue("attackTime"));
+    //    mAmpEnv.decay(getInternalParameterValue("attackTime"));
+        mAmpEnv.release(getInternalParameterValue("releaseTime"));
+        mAmpEnv.levels()[1]=getInternalParameterValue("sustain");
+        mAmpEnv.levels()[2]=getInternalParameterValue("sustain");
+
+        mAmpEnv.curve(getInternalParameterValue("curve"));
+        mPan.pos(getInternalParameterValue("pan"));
+        mCFEnv.levels(getInternalParameterValue("cf1"),
+                      getInternalParameterValue("cf2"),
+                      getInternalParameterValue("cf1"));
+
+
+        mCFEnv.lengths()[0] = getInternalParameterValue("cfRise");
+        mCFEnv.lengths()[1] = 1 - getInternalParameterValue("cfRise");
+        mBWEnv.levels(getInternalParameterValue("bw1"),
+                      getInternalParameterValue("bw2"),
+                      getInternalParameterValue("bw1"));
+        mBWEnv.lengths()[0] = getInternalParameterValue("bwRise");
+        mBWEnv.lengths()[1] = 1- getInternalParameterValue("bwRise");
+
+        mCFEnv.totalLength(getInternalParameterValue("envDur"));
+        mBWEnv.totalLength(getInternalParameterValue("envDur"));
+    }
+};
+
+// chiptune lead (SubSyn)
+class chiptuneLead : public SynthVoice {
+public:
+
+    // Unit generators
+    float mNoiseMix;
+    gam::Pan<> mPan;
+    gam::ADSR<> mAmpEnv;
+    gam::EnvFollow<> mEnvFollow;  // envelope follower to connect audio output to graphics
+    gam::DSF<> mOsc;
+    gam::NoiseWhite<> mNoise;
+    gam::Reson<> mRes;
+    gam::Env<2> mCFEnv;
+    gam::Env<2> mBWEnv;
+    // Additional members
+    Mesh mMesh;
+
+    // Initialize voice. This function will nly be called once per voice
+    void init() override {
+        mAmpEnv.curve(0); // linear segments
+        mAmpEnv.levels(0,1.0,1.0,0); // These tables are not normalized, so scale to 0.3
+        mAmpEnv.sustainPoint(2); // Make point 2 sustain until a release is issued
+        mCFEnv.curve(0);
+        mBWEnv.curve(0);
+        mOsc.harmonics(12);
+        // We have the mesh be a sphere
+        addDisc(mMesh, 1.0, 30);
+
+        createInternalTriggerParameter("amplitude", 0.3, 0.0, 1.0);
+        createInternalTriggerParameter("frequency", 60, 20, 5000);
+        createInternalTriggerParameter("attackTime", 0.1, 0.01, 3.0);
+        createInternalTriggerParameter("releaseTime", 0.2, 0.1, 10.0);
+        createInternalTriggerParameter("sustain", 0.752, 0.0, 1.0);
+        createInternalTriggerParameter("curve", -7.276, -10.0, 10.0);
+        createInternalTriggerParameter("noise", 0.056, 0.0, 1.0);
+        createInternalTriggerParameter("envDur", 0.105, 0.0, 5.0);
+        createInternalTriggerParameter("cf1", 10, 10.0, 5000);
+        createInternalTriggerParameter("cf2", 1362.003, 10.0, 5000);
+        createInternalTriggerParameter("cfRise", 0.421, 0.1, 2);
+        createInternalTriggerParameter("bw1", 2648.691, 10.0, 5000);
+        createInternalTriggerParameter("bw2", 10, 10.0, 5000);
+        createInternalTriggerParameter("bwRise", 0.59, 0.1, 2);
+        createInternalTriggerParameter("hmnum", 20.0, 5.0, 20.0);
+        createInternalTriggerParameter("hmamp", 1.0, 0.0, 1.0);
+        createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+
+    }
+
+    //
+    
+    virtual void onProcess(AudioIOData& io) override {
+        updateFromParameters();
+        float amp = getInternalParameterValue("amplitude");
+        float noiseMix = getInternalParameterValue("noise");
+        while(io()){
+            // mix oscillator with noise
+            float s1 = mOsc()*(1-noiseMix) + mNoise()*noiseMix;
+
+            // apply resonant filter
+            mRes.set(mCFEnv(), mBWEnv());
+            s1 = mRes(s1);
+
+            // appy amplitude envelope
+            s1 *= mAmpEnv() * amp;
+
+            float s2;
+            mPan(s1, s1,s2);
+            io.out(0) += s1;
+            io.out(1) += s2;
+        }
+        
+        
+        if(mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+    }
+
+   virtual void onProcess(Graphics &g) {
+          float frequency = getInternalParameterValue("frequency");
+          float amplitude = getInternalParameterValue("amplitude");
+          g.pushMatrix();
+          g.translate(sin(static_cast<double>(frequency)), cos(static_cast<double>(frequency)), -8);
+          //g.scale(frequency/2000, frequency/4000, 1);
+          float scaling = 0.1;
+          g.scale(scaling * frequency/200, scaling * frequency/400, scaling* 1);
+          g.color(mEnvFollow.value(), frequency/1000, mEnvFollow.value()* 10, 0.4);
+          g.draw(mMesh);
+          g.popMatrix();
+   }
+    virtual void onTriggerOn() override {
+        updateFromParameters();
+        mAmpEnv.reset();
+        mCFEnv.reset();
+        mBWEnv.reset();
+        
+    }
+
+    virtual void onTriggerOff() override {
+        mAmpEnv.triggerRelease();
+//        mCFEnv.triggerRelease();
+//        mBWEnv.triggerRelease();
+    }
+
+    void updateFromParameters() {
+        mOsc.freq(getInternalParameterValue("frequency"));
+        mOsc.harmonics(getInternalParameterValue("hmnum"));
+        mOsc.ampRatio(getInternalParameterValue("hmamp"));
+        mAmpEnv.attack(getInternalParameterValue("attackTime"));
+    //    mAmpEnv.decay(getInternalParameterValue("attackTime"));
+        mAmpEnv.release(getInternalParameterValue("releaseTime"));
+        mAmpEnv.levels()[1]=getInternalParameterValue("sustain");
+        mAmpEnv.levels()[2]=getInternalParameterValue("sustain");
+
+        mAmpEnv.curve(getInternalParameterValue("curve"));
+        mPan.pos(getInternalParameterValue("pan"));
+        mCFEnv.levels(getInternalParameterValue("cf1"),
+                      getInternalParameterValue("cf2"),
+                      getInternalParameterValue("cf1"));
+
+
+        mCFEnv.lengths()[0] = getInternalParameterValue("cfRise");
+        mCFEnv.lengths()[1] = 1 - getInternalParameterValue("cfRise");
+        mBWEnv.levels(getInternalParameterValue("bw1"),
+                      getInternalParameterValue("bw2"),
+                      getInternalParameterValue("bw1"));
+        mBWEnv.lengths()[0] = getInternalParameterValue("bwRise");
+        mBWEnv.lengths()[1] = 1- getInternalParameterValue("bwRise");
+
+        mCFEnv.totalLength(getInternalParameterValue("envDur"));
+        mBWEnv.totalLength(getInternalParameterValue("envDur"));
+    }
+};
+
+// videogame chords SubSyn
+class videoGame : public SynthVoice {
+public:
+
+    // Unit generators
+    float mNoiseMix;
+    gam::Pan<> mPan;
+    gam::ADSR<> mAmpEnv;
+    gam::EnvFollow<> mEnvFollow;  // envelope follower to connect audio output to graphics
+    gam::DSF<> mOsc;
+    gam::NoiseWhite<> mNoise;
+    gam::Reson<> mRes;
+    gam::Env<2> mCFEnv;
+    gam::Env<2> mBWEnv;
+    // Additional members
+    Mesh mMesh;
+
+    // Initialize voice. This function will nly be called once per voice
+    void init() override {
+        mAmpEnv.curve(0); // linear segments
+        mAmpEnv.levels(0,1.0,1.0,0); // These tables are not normalized, so scale to 0.3
+        mAmpEnv.sustainPoint(2); // Make point 2 sustain until a release is issued
+        mCFEnv.curve(0);
+        mBWEnv.curve(0);
+        mOsc.harmonics(12);
+        // We have the mesh be a sphere
+        addOctahedron(mMesh);
+
+        createInternalTriggerParameter("amplitude", 0.3, 0.0, 1.0);
+        createInternalTriggerParameter("frequency", 60, 20, 5000);
+        createInternalTriggerParameter("attackTime", 0.01, 0.01, 3.0);
+        createInternalTriggerParameter("releaseTime", 0.1, 0.1, 10.0);
+        createInternalTriggerParameter("sustain", 0.569, 0.0, 1.0);
+        createInternalTriggerParameter("curve", 4.366, -10.0, 10.0);
+        createInternalTriggerParameter("noise", 0.026, 0.0, 1.0);
+        createInternalTriggerParameter("envDur", 0.317, 0.0, 5.0);
+        createInternalTriggerParameter("cf1", 10, 587.201, 5000);
+        createInternalTriggerParameter("cf2", 2104.683, 10.0, 5000);
+        createInternalTriggerParameter("cfRise", 0.345, 0.1, 2);
+        createInternalTriggerParameter("bw1", 633.750, 10.0, 5000);
+        createInternalTriggerParameter("bw2", 875.802, 10.0, 5000);
+        createInternalTriggerParameter("bwRise", 0.1, 0.1, 2);
+        createInternalTriggerParameter("hmnum", 11.8, 5.0, 20.0);
+        createInternalTriggerParameter("hmamp", 0.996, 0.0, 1.0);
+        createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+
+    }
+
+    //
+    
+    virtual void onProcess(AudioIOData& io) override {
+        updateFromParameters();
+        float amp = getInternalParameterValue("amplitude");
+        float noiseMix = getInternalParameterValue("noise");
+        while(io()){
+            // mix oscillator with noise
+            float s1 = mOsc()*(1-noiseMix) + mNoise()*noiseMix;
+
+            // apply resonant filter
+            mRes.set(mCFEnv(), mBWEnv());
+            s1 = mRes(s1);
+
+            // appy amplitude envelope
+            s1 *= mAmpEnv() * amp;
+
+            float s2;
+            mPan(s1, s1,s2);
+            io.out(0) += s1;
+            io.out(1) += s2;
+        }
+        
+        
+        if(mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+    }
+
+   virtual void onProcess(Graphics &g) {
+          float frequency = getInternalParameterValue("frequency");
+          float amplitude = getInternalParameterValue("amplitude");
+          g.pushMatrix();
+          g.translate(sin(static_cast<double>(amplitude)), cos(static_cast<double>(amplitude)), -16);
+          //g.scale(frequency/2000, frequency/4000, 1);
+          float scaling = 0.1;
+          g.scale(scaling * frequency/200, scaling * frequency/400, scaling* 1);
+          g.color(mEnvFollow.value(), frequency/1000, mEnvFollow.value()* 10, 0.4);
+          g.draw(mMesh);
+          g.popMatrix();
+   }
+    virtual void onTriggerOn() override {
+        updateFromParameters();
+        mAmpEnv.reset();
+        mCFEnv.reset();
+        mBWEnv.reset();
+        
+    }
+
+    virtual void onTriggerOff() override {
+        mAmpEnv.triggerRelease();
+//        mCFEnv.triggerRelease();
+//        mBWEnv.triggerRelease();
+    }
+
+    void updateFromParameters() {
+        mOsc.freq(getInternalParameterValue("frequency"));
+        mOsc.harmonics(getInternalParameterValue("hmnum"));
+        mOsc.ampRatio(getInternalParameterValue("hmamp"));
+        mAmpEnv.attack(getInternalParameterValue("attackTime"));
+    //    mAmpEnv.decay(getInternalParameterValue("attackTime"));
+        mAmpEnv.release(getInternalParameterValue("releaseTime"));
+        mAmpEnv.levels()[1]=getInternalParameterValue("sustain");
+        mAmpEnv.levels()[2]=getInternalParameterValue("sustain");
+
+        mAmpEnv.curve(getInternalParameterValue("curve"));
+        mPan.pos(getInternalParameterValue("pan"));
+        mCFEnv.levels(getInternalParameterValue("cf1"),
+                      getInternalParameterValue("cf2"),
+                      getInternalParameterValue("cf1"));
+
+
+        mCFEnv.lengths()[0] = getInternalParameterValue("cfRise");
+        mCFEnv.lengths()[1] = 1 - getInternalParameterValue("cfRise");
+        mBWEnv.levels(getInternalParameterValue("bw1"),
+                      getInternalParameterValue("bw2"),
+                      getInternalParameterValue("bw1"));
+        mBWEnv.lengths()[0] = getInternalParameterValue("bwRise");
+        mBWEnv.lengths()[1] = 1- getInternalParameterValue("bwRise");
+
+        mCFEnv.totalLength(getInternalParameterValue("envDur"));
+        mBWEnv.totalLength(getInternalParameterValue("envDur"));
+    }
 };
 
 class Marimba : public SynthVoice
@@ -607,149 +1130,6 @@ public:
     // void onTriggerOff() override {  }
 };
 
-class PluckedString : public SynthVoice
-{
-public:
-    float mAmp;
-    float mDur;
-    float mPanRise;
-    gam::Pan<> mPan;
-    gam::NoiseWhite<> noise;
-    gam::Decay<> env;
-    gam::MovingAvg<> fil{2};
-    gam::Delay<float, gam::ipl::Trunc> delay;
-    gam::ADSR<> mAmpEnv;
-    gam::EnvFollow<> mEnvFollow;
-    gam::Env<2> mPanEnv;
-    gam::STFT stft = gam::STFT(FFT_SIZE, FFT_SIZE / 4, 0, gam::HANN, gam::MAG_FREQ);
-    // This time, let's use spectrograms for each notes as the visual components.
-    Mesh mSpectrogram;
-    vector<float> spectrum;
-    double a = 0;
-    double b = 0;
-    double timepose = 10;
-    // Additional members
-    Mesh mMesh;
-
-    virtual void init() override
-    {
-        // Declare the size of the spectrum
-        spectrum.resize(FFT_SIZE / 2 + 1);
-        // mSpectrogram.primitive(Mesh::POINTS);
-        mSpectrogram.primitive(Mesh::LINE_STRIP);
-        mAmpEnv.levels(1, 0.5, 0.2, 0);
-        mPanEnv.curve(5);
-        env.decay(0.05);
-        delay.maxDelay(1. / 27.5);
-        delay.delay(1. / 440.0);
-
-        addDisc(mMesh, 1.0, 30);
-        createInternalTriggerParameter("amplitude", 0.1, 0.0, 1.0);
-        createInternalTriggerParameter("frequency", 60, 20, 5000);
-        createInternalTriggerParameter("attackTime", 0.001, 0.001, 1.0);
-        createInternalTriggerParameter("releaseTime", 3.0, 0.1, 10.0);
-        createInternalTriggerParameter("sustain", 0.7, 0.0, 1.0);
-        createInternalTriggerParameter("Pan1", 0.0, -1.0, 1.0);
-        createInternalTriggerParameter("Pan2", 0.0, -1.0, 1.0);
-        createInternalTriggerParameter("PanRise", 0.0, 0, 3.0); // range check
-    }
-
-    //    void reset(){ env.reset(); }
-
-    float operator()()
-    {
-        return (*this)(noise() * env());
-    }
-    float operator()(float in)
-    {
-        return delay(
-            fil(delay() + in));
-    }
-
-    virtual void onProcess(AudioIOData &io) override
-    {
-
-        while (io())
-        {
-            mPan.pos(mPanEnv());
-            float s1 = (*this)() * mAmpEnv() * mAmp;
-            float s2;
-            mEnvFollow(s1);
-            mPan(s1, s1, s2);
-            io.out(0) += s1;
-            io.out(1) += s2;
-            // STFT for each notes
-            if (stft(s1))
-            { // Loop through all the frequency bins
-                for (unsigned k = 0; k < stft.numBins(); ++k)
-                {
-                    // Here we simply scale the complex sample
-                    spectrum[k] = tanh(pow(stft.bin(k).real(), 1.3));
-                }
-            }
-        }
-        if (mAmpEnv.done() && (mEnvFollow.value() < 0.001))
-            free();
-    }
-
-    virtual void onProcess(Graphics &g) override
-    {
-        float frequency = getInternalParameterValue("frequency");
-        float amplitude = getInternalParameterValue("amplitude");
-        a += 0.29;
-        b += 0.23;
-        timepose -= 0.1;
-
-        mSpectrogram.reset();
-        // mSpectrogram.primitive(Mesh::LINE_STRIP);
-
-        for (int i = 0; i < FFT_SIZE / 2; i++)
-        {
-            mSpectrogram.color(HSV(spectrum[i] * 1000 + al::rnd::uniform()));
-            mSpectrogram.vertex(i, spectrum[i], 0.0);
-        }
-        g.meshColor(); // Use the color in the mesh
-        g.pushMatrix();
-        g.translate(0, 0, -10);
-        g.rotate(a, Vec3f(0, 1, 0));
-        g.rotate(b, Vec3f(1));
-        g.scale(10.0 / FFT_SIZE, 500, 1.0);
-        g.draw(mSpectrogram);
-        g.popMatrix();
-    }
-
-    virtual void onTriggerOn() override
-    {
-        mAmpEnv.reset();
-        timepose = 10;
-        updateFromParameters();
-        env.reset();
-        delay.zero();
-        mPanEnv.reset();
-    }
-
-    virtual void onTriggerOff() override
-    {
-        mAmpEnv.triggerRelease();
-    }
-
-    void updateFromParameters()
-    {
-        mPanEnv.levels(getInternalParameterValue("Pan1"),
-                       getInternalParameterValue("Pan2"),
-                       getInternalParameterValue("Pan1"));
-        mPanRise = getInternalParameterValue("PanRise");
-        delay.freq(getInternalParameterValue("frequency"));
-        mAmp = getInternalParameterValue("amplitude");
-        mAmpEnv.levels()[1] = 1.0;
-        mAmpEnv.levels()[2] = getInternalParameterValue("sustain");
-        mAmpEnv.lengths()[0] = getInternalParameterValue("attackTime");
-        mAmpEnv.lengths()[3] = getInternalParameterValue("releaseTime");
-        mPanEnv.lengths()[0] = mPanRise;
-        mPanEnv.lengths()[1] = mPanRise;
-    }
-};
-
 class MyApp : public App, public MIDIMessageHandler
 {
 public:
@@ -795,7 +1175,7 @@ public:
         auto *voice = synthManager.synth().getVoice<moonBass>();
 
         voice->setInternalParameterValue("freq", freq);
-        voice->setInternalParameterValue("amplitude", amp/3);
+        voice->setInternalParameterValue("amplitude", amp/2);
         // voice->setInternalParameterValue("sustain", sus);
 
         synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
@@ -806,7 +1186,7 @@ public:
         auto *voice = synthManager.synth().getVoice<electricBass>();
 
         voice->setInternalParameterValue("freq", freq);
-        voice->setInternalParameterValue("amplitude", amp/3);
+        voice->setInternalParameterValue("amplitude", amp/2);
         // voice->setInternalParameterValue("sustain", sus);
 
         synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
@@ -823,23 +1203,56 @@ public:
         synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
     }
 
+    void playChiptune(float freq, float time, float duration, float amp = 0.4)
+    {
+        auto *voice = synthManager.synth().getVoice<chiptuneLead>();
+
+        voice->setInternalParameterValue("frequency", freq);
+        voice->setInternalParameterValue("amplitude", amp/2);
+        // voice->setInternalParameterValue("sustain", sus);
+
+        synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
+    }
+
+    void playFunkyBass(float freq, float time, float duration, float amp = 0.4)
+    {
+        auto *voice = synthManager.synth().getVoice<funkyBass>();
+
+        voice->setInternalParameterValue("frequency", freq/2);
+        voice->setInternalParameterValue("amplitude", amp/2);
+        // voice->setInternalParameterValue("sustain", sus);
+
+        synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
+    }
+
+    void playLongPluck(float freq, float time, float duration, float amp = 0.4)
+    {
+        auto *voice = synthManager.synth().getVoice<longPluck>();
+
+        voice->setInternalParameterValue("frequency", freq);
+        voice->setInternalParameterValue("amplitude", amp/2);
+        // voice->setInternalParameterValue("sustain", sus);
+
+        synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
+    }
+
+    void playVideoGame(float freq, float time, float duration, float amp = 0.4)
+    {
+        auto *voice = synthManager.synth().getVoice<videoGame>();
+
+        voice->setInternalParameterValue("frequency", freq);
+        voice->setInternalParameterValue("amplitude", amp/3);
+        // voice->setInternalParameterValue("sustain", sus);
+
+        synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
+    }
+
     void playMarimba(float freq, float time, float duration, float amp = .1, float attack = 0.1, float decay = 0.2)
     {
         auto *voice = synthManager.synth().getVoice<Marimba>();
         // amp, freq, attack, release, pan
         vector<VariantValue> params = vector<VariantValue>({amp, freq, attack, decay, 0.0});
         voice->setTriggerParams(params);
-        synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
-    }
-
-    void playPluck(float freq, float time, float duration, float amp = 0.4)
-    {
-        auto *voice = synthManager.synth().getVoice<PluckedString>();
-
-        voice->setInternalParameterValue("frequency", freq);
-        voice->setInternalParameterValue("amplitude", amp);
-        // voice->setInternalParameterValue("sustain", sus);
-
         synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
     }
 
@@ -896,25 +1309,25 @@ public:
         if(p1 != piano1.end())
         {
             auto note = *p1;
-            playPiano(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playMarimba(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++p1;
         }
         if(p2 != piano2.end())
         {
             auto note = *p2;
-            playPiano(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playVideoGame(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++p2;
         }
         if(p3 != piano3.end())
         {
             auto note = *p3;
-            playPiano(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playChiptune(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++p3;
         }
         if(pl != pluck.end())
         {
             auto note = *pl;
-            playPluck(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playLongPluck(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++pl;
         }
         if(db != deepBass.end())
@@ -926,7 +1339,7 @@ public:
         if(eb != electricBass.end())
         {
             auto note = *eb;
-            playElectricBass(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playFunkyBass(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++eb;
         }
         if(k != kick.end())

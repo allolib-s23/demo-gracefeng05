@@ -42,7 +42,97 @@ float freq_of(int midi) {
     return freq;
 }
 
-class Bloop : public SynthVoice
+
+
+class SineEnv : public SynthVoice {
+ public:
+  // Unit generators
+  gam::Pan<> mPan;
+  gam::Sine<> mOsc;
+  gam::Env<3> mAmpEnv;
+  // envelope follower to connect audio output to graphics
+  gam::EnvFollow<> mEnvFollow;
+
+  Mesh mMesh;
+
+  // Initialize voice. This function will only be called once per voice when
+  // it is created. Voices will be reused if they are idle.
+  void init() override {
+    // Intialize envelope
+    mAmpEnv.curve(0);  // make segments lines
+    mAmpEnv.levels(1, 0.5, 0.3, 0.1, 0.0);
+    mAmpEnv.sustainPoint(2);  // Make point 2 sustain until a release is issued
+
+    addCube(mMesh, 1, 1);
+    // This is a quick way to create parameters for the voice. Trigger
+    // parameters are meant to be set only when the voice starts, i.e. they
+    // are expected to be constant within a voice instance. (You can actually
+    // change them while you are prototyping, but their changes will only be
+    // stored and aplied when a note is triggered.)
+
+    createInternalTriggerParameter("amplitude", 0.3, 0.0, 1.0);
+    createInternalTriggerParameter("frequency", 60, 20, 5000);
+    createInternalTriggerParameter("attackTime", 1.0, 0.01, 3.0);
+    createInternalTriggerParameter("releaseTime", 3.0, 0.1, 10.0);
+    createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
+    
+    /* createInternalTriggerParameter("pianoKeyX");
+    createInternalTriggerParameter("pianoKeyY");
+    createInternalTriggerParameter("pianoKeyWidth");
+    createInternalTriggerParameter("pianoKeyHeight");]
+    */ 
+  }
+
+  // The audio processing function
+  void onProcess(AudioIOData& io) override {
+    // Get the values from the parameters and apply them to the corresponding
+    // unit generators. You could place these lines in the onTrigger() function,
+    // but placing them here allows for realtime prototyping on a running
+    // voice, rather than having to trigger a new voice to hear the changes.
+    // Parameters will update values once per audio callback because they
+    // are outside the sample processing loop.
+    mOsc.freq(getInternalParameterValue("frequency"));
+    mAmpEnv.lengths()[0] = getInternalParameterValue("attackTime");
+    mAmpEnv.lengths()[2] = getInternalParameterValue("releaseTime");
+    mPan.pos(getInternalParameterValue("pan"));
+    while (io()) {
+      float s1 = mOsc() * mAmpEnv() * getInternalParameterValue("amplitude");
+      float s2;
+      mEnvFollow(s1);
+      mPan(s1, s1, s2);
+      io.out(0) += s1;
+      io.out(1) += s2;
+    }
+    // We need to let the synth know that this voice is done
+    // by calling the free(). This takes the voice out of the
+    // rendering chain
+    if (mAmpEnv.done() && (mEnvFollow.value() < 0.001f)) free();
+  }
+
+  // The graphics processing function
+  void onProcess(Graphics& g) override {
+    float frequency = getInternalParameterValue("frequency");
+    float amplitude = getInternalParameterValue("amplitude");
+
+    g.pushMatrix();
+    g.depthTesting(true);
+    g.lighting(true);
+
+    g.translate(sin(static_cast<double>(frequency)), cos(static_cast<double>(frequency)), -8);
+    g.scale(0.3 + mAmpEnv() * 0.2, 0.3 + mAmpEnv() * 0.5, 1);
+    g.color(HSV(frequency / 1000, 0.5 + mAmpEnv() * 0.1, 0.3 + 0.5 * mAmpEnv()));
+    g.draw(mMesh);
+  }
+
+  // The triggering functions just need to tell the envelope to start or release
+  // The audio processing function checks when the envelope is done to remove
+  // the voice from the processing chain.
+  void onTriggerOn() override { mAmpEnv.reset(); }
+
+  void onTriggerOff() override { mAmpEnv.release(); }
+};
+
+class Marimba : public SynthVoice
 {
 public:
   // Unit generators
@@ -186,8 +276,9 @@ public:
         createInternalTriggerParameter("releaseTime", 0.1, 0.1, 10.0);
         createInternalTriggerParameter("pan", 0.0, -1.0, 1.0);
         // createInternalTriggerParameter("partials", 3.0, 1.0, MAX_PARTIALS);
-        createInternalTriggerParameter("deltaA", 0.23, -1, 1);
-        createInternalTriggerParameter("deltaB", 0.29, -1, 1);
+
+        createInternalTriggerParameter("deltaA", 1, -1, 1);
+        createInternalTriggerParameter("deltaB", -1, -1, 1);
     }
 
     // The audio processing function
@@ -281,7 +372,7 @@ public:
 class MyApp : public App, public MIDIMessageHandler
 {
 public:
-    SynthGUIManager<Bloop> synthManager{"bloop"};
+    SynthGUIManager<Marimba> synthManager{"bloop"};
     //    ParameterMIDI parameterMIDI;
     RtMidiIn midiIn; // MIDI input carrier
     Mesh mSpectrogram;
@@ -318,9 +409,9 @@ public:
         spectrum.resize(FFT_SIZE / 2 + 1);
     }
 
-    void playBloop(float freq, float time, float duration, float amp = .1, float attack = 0.1, float decay = 0.2)
+    void playMarimba(float freq, float time, float duration, float amp = .1, float attack = 0.1, float decay = 0.2)
     {
-        auto *voice = synthManager.synth().getVoice<Bloop>();
+        auto *voice = synthManager.synth().getVoice<Marimba>();
         // amp, freq, attack, release, pan
         vector<VariantValue> params = vector<VariantValue>({amp, freq, attack, decay, 0.0});
         voice->setTriggerParams(params);
@@ -328,6 +419,18 @@ public:
     }
 
     void playViolin(float freq, float time, float duration = 0.5, float amp = 0.2, float attack = 0.1, float decay = 0.1){
+    auto* voice = synthManager.synth().getVoice<Violin>();
+
+    voice->setInternalParameterValue("frequency", freq);
+    voice->setInternalParameterValue("amplitude", amp);
+    voice->setInternalParameterValue("attackTime", attack);
+    voice->setInternalParameterValue("releaseTime", decay);
+    voice->setInternalParameterValue("pan", 0.0f);
+
+    synthManager.synthSequencer().addVoiceFromNow(voice, time, duration);
+  }
+
+  void playPiano(float freq, float time, float duration = 0.5, float amp = 0.2, float attack = 0.1, float decay = 0.1){
     auto* voice = synthManager.synth().getVoice<Violin>();
 
     voice->setInternalParameterValue("frequency", freq);
@@ -382,13 +485,13 @@ public:
         if(c != cello.end())
         {
             auto note = *c;
-            playViolin(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playMarimba(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++c;
         }
         if(b != bass.end())
         {
             auto note = *b;
-            playViolin(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
+            playMarimba(freq_of(note["midi"]), note["time"], note["duration"], note["velocity"]);
             ++b;
         }
     }
